@@ -53,53 +53,6 @@ func NewBinaryLogger(ctx context.Context,
 	return &logger
 }
 
-func (logger *BinaryLoggerImpl) openLogFile(fileName string, fileId int) {
-	// attempt to open the file.
-	// if the file exists, check its size
-	// if full, create a new file with an incremented id
-
-}
-
-// TODO finish implementing
-func (logger *BinaryLoggerImpl) writeLoggable(writer *bufio.Writer, loggable BinaryLoggable) int64 {
-
-	bytes, err := loggable.toBytes()
-	if err != nil {
-		log.Fatalln("failed to serialize log info:", err)
-	}
-	// check to see if we have room in the file
-	//if logger.maxLogFileSize < fileSize+int64(len(bytes))+4 {
-
-	// now what?
-	// flush the writer, close the file
-	// create new file and new writer
-	//}
-
-	var bytesWritten int64 = 0
-
-	// maintain data consistency: if the writer fills the current buffer
-	// and then writes to the next, flush the second one right away
-	bytesToWrite := len(bytes)
-	flushNow := writer.Available() < bytesToWrite
-
-	nBytes, err := writer.WriteRune(rune(bytesToWrite))
-	if err != nil {
-		log.Fatalln("failed to write data size. error:", err)
-	}
-	bytesWritten += int64(nBytes)
-
-	nBytes, err = writer.Write(bytes)
-	if err != nil {
-		log.Fatalln("failed to write data. error:", err)
-	}
-	bytesWritten += int64(nBytes)
-	if flushNow {
-		writer.Flush()
-	}
-
-	return bytesWritten
-}
-
 func (logger *BinaryLoggerImpl) writeToFile(ctx context.Context, wg *sync.WaitGroup, fileName string) {
 	// if any of the code called from this function cause a panic,
 	// recover and log the error
@@ -111,7 +64,7 @@ func (logger *BinaryLoggerImpl) writeToFile(ctx context.Context, wg *sync.WaitGr
 	defer close(logger.writeCh)
 	defer wg.Done()
 
-	// TODO design solitop to switch files on the fly:
+	// TODO refactor to support multiple output files
 	// fill one file up, move to next
 	f, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -154,20 +107,10 @@ func (logger *BinaryLoggerImpl) writeToFile(ctx context.Context, wg *sync.WaitGr
 
 		case loggable := <-logger.writeCh:
 
-			// TODO move this into separate function (this one is too big)
-			//logger.writeLoggable(writer, loggable)
-
 			bytes, err := loggable.toBytes()
 			if err != nil {
 				log.Fatalln("failed to serialize log info:", err)
 			}
-			// check to see if we have room in the file
-			//if logger.maxLogFileSize < fileSize+int64(len(bytes))+4 {
-
-			// now what?
-			// flush the writer, close the file
-			// create new file and new writer
-			//}
 
 			// maintain data consistency: if the writer fills the current buffer
 			// and then writes to the next, flush the second one right away
