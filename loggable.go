@@ -15,18 +15,17 @@ type BinaryLoggable interface {
 	fromBytes(rawBytes []byte) error
 }
 
-type LoggableImpl1 struct {
+type LoggableImpl struct {
 	DeviceId int32
 	ReportId int32
 	Value    float32
 }
 
-// TODO Add a second one with variable sized data
-func (l *LoggableImpl1) String() string {
+func (l *LoggableImpl) String() string {
 	return fmt.Sprintf("DeviceId: %d ReportId: %d Val3: %f", l.DeviceId, l.ReportId, l.Value)
 }
 
-func (l *LoggableImpl1) toBytes() ([]byte, error) {
+func (l *LoggableImpl) toBytes() ([]byte, error) {
 	buf := new(bytes.Buffer)
 	err := binary.Write(buf, binary.LittleEndian, l)
 	if err != nil {
@@ -35,7 +34,7 @@ func (l *LoggableImpl1) toBytes() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (l *LoggableImpl1) fromBytes(rawBytes []byte) error {
+func (l *LoggableImpl) fromBytes(rawBytes []byte) error {
 	// check the parameters:
 
 	buf := bytes.NewBuffer(rawBytes)

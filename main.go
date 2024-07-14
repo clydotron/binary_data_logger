@@ -16,7 +16,6 @@ const (
 )
 
 type App struct {
-	//logger BinaryLogger[LoggableImpl1]
 	logger    SimpleLogger
 	doneCh    chan bool
 	waitGroup *sync.WaitGroup
@@ -34,11 +33,12 @@ func (app *App) readFromFile(ctx context.Context, fileName string) {
 	}
 	defer fs.Close()
 
-	iterator, err := app.logger.Read(fs, LoggableImpl1{})
+	iterator, err := app.logger.Read(fs, LoggableImpl{})
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	// TODO remove this - add metion of 'tail'
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -54,7 +54,7 @@ func (app *App) readFromFile(ctx context.Context, fileName string) {
 		case <-ticker.C:
 			for iterator.HasNext() {
 				loggedData := iterator.Next()
-				log, ok := loggedData.(*LoggableImpl1)
+				log, ok := loggedData.(*LoggableImpl)
 				if ok {
 					fmt.Println(log.String())
 				}
@@ -64,7 +64,7 @@ func (app *App) readFromFile(ctx context.Context, fileName string) {
 }
 
 // logData - simple function to generate log entries at a specified frequency
-func (app *App) logData(ctx context.Context, prefix string, frequencyInMS int32) {
+func (app *App) logData(ctx context.Context, prefix string, frequencyInMS, runLengthInSec int) {
 
 	app.waitGroup.Add(1)
 	defer app.waitGroup.Done()
@@ -72,23 +72,28 @@ func (app *App) logData(ctx context.Context, prefix string, frequencyInMS int32)
 	ticker := time.NewTicker(time.Duration(frequencyInMS) * time.Millisecond)
 	defer ticker.Stop()
 
+	timer := time.NewTimer(time.Duration(runLengthInSec) * time.Second)
+	defer timer.Stop()
 	counter := 1
-	for {
 
+	for {
 		select {
 		case <-ctx.Done():
-			fmt.Printf("%s Done!\n", prefix)
+			log.Println(prefix, "terminated")
+			return
+		case <-timer.C:
+			log.Println(prefix, "timed out")
 			return
 
 		case <-ticker.C:
-			loggable := LoggableImpl1{
+			loggable := &LoggableImpl{
 				DeviceId: int32(counter),
 				ReportId: int32(counter * 2),
 				Value:    float32(counter * 1.0),
 			}
-			err := app.logger.Write(&loggable)
+			err := app.logger.Write(loggable)
 			if err != nil {
-				fmt.Printf("write channel is full: (oops)\n")
+				fmt.Println(prefix, "Write error:", err)
 				return
 			}
 			counter += 1
@@ -97,6 +102,12 @@ func (app *App) logData(ctx context.Context, prefix string, frequencyInMS int32)
 }
 
 func main() {
+
+	// start with a fresh log file each pass:
+	err := os.Remove(logFileName)
+	if err != nil {
+		log.Fatalln("Failed to delete log file:", err)
+	}
 
 	ctx, cancelFcn := context.WithCancel(context.Background())
 
@@ -110,12 +121,19 @@ func main() {
 	signalCh := make(chan os.Signal, 4)
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
 
+	// generate logs for t seconds, then cancel them and wait for the funcs to exit
+	runLength := 3
+	go app.logData(ctx, "process1", 100, runLength)
+	go app.logData(ctx, "process2", 250, runLength)
+	go app.logData(ctx, "process3", 150, runLength)
+
+	app.waitGroup.Wait()
+	log.Println("writers are done.")
+
+	// read all of the log files from logger
 	go app.readFromFile(ctx, logFileName)
-	//go app.logData(ctx, "process1", 100)
-	//go app.logData(ctx, "process2", 250)
 
 	// wait for control-c to exit
-
 	<-signalCh
 	cancelFcn()
 
