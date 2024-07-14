@@ -15,18 +15,19 @@ const (
 	defaultWriteThreshold = time.Duration(time.Second)
 )
 
-type SimpleLogger interface {
+type BinaryLogger interface {
 	Write(loggable BinaryLoggable) error
+
 	Read(file *os.File, clazz any) (SimpleIterator, error)
 }
 
-type SimpleLoggerImpl struct {
+type BinaryLoggerImpl struct {
 	writeCh        chan BinaryLoggable
 	writeThreshold time.Duration
 }
 
-func NewSimpleLogger(ctx context.Context, fileName string) SimpleLogger {
-	logger := SimpleLoggerImpl{
+func NewBinaryLogger(ctx context.Context, fileName string) BinaryLogger {
+	logger := BinaryLoggerImpl{
 		writeCh:        make(chan BinaryLoggable, writeChanBufferSize),
 		writeThreshold: defaultWriteThreshold,
 	}
@@ -34,7 +35,15 @@ func NewSimpleLogger(ctx context.Context, fileName string) SimpleLogger {
 	return &logger
 }
 
-func (logger *SimpleLoggerImpl) writeToFile(ctx context.Context, fileName string) {
+func (logger *BinaryLoggerImpl) writeToFile(ctx context.Context, fileName string) {
+	// if any of the code called from this function cause a panic,
+	// recover and log the error
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("Recovered: error:", r)
+		}
+	}()
+	defer close(logger.writeCh)
 
 	f, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -77,7 +86,7 @@ func (logger *SimpleLoggerImpl) writeToFile(ctx context.Context, fileName string
 	}
 }
 
-func (logger *SimpleLoggerImpl) Write(loggable BinaryLoggable) error {
+func (logger *BinaryLoggerImpl) Write(loggable BinaryLoggable) error {
 
 	// provide a default for the case where the channel is full,
 	// otherwise this could block
@@ -90,7 +99,7 @@ func (logger *SimpleLoggerImpl) Write(loggable BinaryLoggable) error {
 	return nil
 }
 
-func (logger *SimpleLoggerImpl) Read(file *os.File, clazz any) (SimpleIterator, error) {
+func (logger *BinaryLoggerImpl) Read(file *os.File, clazz any) (SimpleIterator, error) {
 	reader := bufio.NewReader(file)
 
 	// check to see if there is anything in the file:

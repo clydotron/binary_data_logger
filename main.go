@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"log"
 	"os"
@@ -16,7 +17,7 @@ const (
 )
 
 type App struct {
-	logger    SimpleLogger
+	logger    BinaryLogger
 	doneCh    chan bool
 	waitGroup *sync.WaitGroup
 }
@@ -24,7 +25,8 @@ type App struct {
 // readFromFile - uses the BinaryLogger Read interface to retrieve an interator to the logs
 
 func (app *App) readFromFile(ctx context.Context, fileName string) {
-	app.waitGroup.Add(1)
+	log.Println("ReadFromFile")
+
 	defer app.waitGroup.Done()
 
 	fs, err := os.Open(fileName)
@@ -33,31 +35,29 @@ func (app *App) readFromFile(ctx context.Context, fileName string) {
 	}
 	defer fs.Close()
 
-	iterator, err := app.logger.Read(fs, LoggableImpl{})
+	iterator, err := app.logger.Read(fs, loggableImpl{})
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// TODO remove this - add metion of 'tail'
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	// sit in this loop until the app is exited.
-	// check for new messages every second.
-	// TODO revise this - tail wont work
+	// sit in this loop until either the program is exited, or we consume all of the data.
+	// TODO explore adding tail functionality
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Println("Done!")
+			log.Println("Done!")
 			return
 
-		case <-ticker.C:
-			for iterator.HasNext() {
-				loggedData := iterator.Next()
-				log, ok := loggedData.(*LoggableImpl)
-				if ok {
-					fmt.Println(log.String())
-				}
+		default:
+			if !iterator.HasNext() {
+				app.doneCh <- true
+				return
+			}
+
+			loggedData := iterator.Next()
+			logImpl, ok := loggedData.(*loggableImpl)
+			if ok {
+				fmt.Println(logImpl.String())
 			}
 		}
 	}
@@ -65,8 +65,6 @@ func (app *App) readFromFile(ctx context.Context, fileName string) {
 
 // logData - simple function to generate log entries at a specified frequency
 func (app *App) logData(ctx context.Context, prefix string, frequencyInMS, runLengthInSec int) {
-
-	app.waitGroup.Add(1)
 	defer app.waitGroup.Done()
 
 	ticker := time.NewTicker(time.Duration(frequencyInMS) * time.Millisecond)
@@ -86,10 +84,14 @@ func (app *App) logData(ctx context.Context, prefix string, frequencyInMS, runLe
 			return
 
 		case <-ticker.C:
-			loggable := &LoggableImpl{
+			data := make([]byte, 512)
+			rand.Read(data)
+			loggable := &loggableImpl{
+				Name:     prefix,
 				DeviceId: int32(counter),
 				ReportId: int32(counter * 2),
 				Value:    float32(counter * 1.0),
+				Data:     data,
 			}
 			err := app.logger.Write(loggable)
 			if err != nil {
@@ -103,17 +105,14 @@ func (app *App) logData(ctx context.Context, prefix string, frequencyInMS, runLe
 
 func main() {
 
-	// start with a fresh log file each pass:
-	err := os.Remove(logFileName)
-	if err != nil {
-		log.Fatalln("Failed to delete log file:", err)
-	}
+	// start with a fresh log file each pass: (dont care about the error)
+	os.Remove(logFileName)
 
 	ctx, cancelFcn := context.WithCancel(context.Background())
 
 	app := App{
 		waitGroup: &sync.WaitGroup{},
-		logger:    NewSimpleLogger(ctx, logFileName),
+		logger:    NewBinaryLogger(ctx, logFileName),
 		doneCh:    make(chan bool),
 	}
 
@@ -122,19 +121,25 @@ func main() {
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
 
 	// generate logs for t seconds, then cancel them and wait for the funcs to exit
-	runLength := 3
-	go app.logData(ctx, "process1", 100, runLength)
-	go app.logData(ctx, "process2", 250, runLength)
-	go app.logData(ctx, "process3", 150, runLength)
+	runLength := 1
+	// increment the wait group here so we dont have a race condition below
+	app.waitGroup.Add(3)
+	go app.logData(ctx, "process1", 10, runLength)
+	go app.logData(ctx, "process2", 25, runLength)
+	go app.logData(ctx, "process3", 15, runLength)
 
 	app.waitGroup.Wait()
-	log.Println("writers are done.")
 
 	// read all of the log files from logger
+	app.waitGroup.Add(1)
 	go app.readFromFile(ctx, logFileName)
 
-	// wait for control-c to exit
-	<-signalCh
+	// wait for either control-c, or reading to finish to exit
+	select {
+	case <-signalCh:
+	case <-app.doneCh:
+	}
+
 	cancelFcn()
 
 	fmt.Println("waiting for everything to shutdown")

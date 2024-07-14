@@ -46,13 +46,26 @@ func (si *SimpleIteratorImpl) Next() interface{} {
 	buf := make([]byte, bytesToRead)
 	nBytes, err := si.reader.Read(buf)
 	if err != nil {
-		// do something drastic...
+		// TODO: do something drastic...
 		si.hasNext = false
 		return nil
 	}
 
+	// its possible that the current block doesnt have all the data:
+	// if this happens, attempt to read the missing bytes (should use the next block)
 	if nBytes != bytesToRead {
-		fmt.Println("didnt read enough bytes!")
+		missingBytes := bytesToRead - nBytes
+		//fmt.Println("didnt read enough bytes - missing:", missingBytes)
+		tbytesRead, err := si.reader.Read(buf[nBytes:])
+		if err != nil {
+			// TODO better error handling here
+			//
+		}
+		if tbytesRead != missingBytes {
+			log.Println("still missing bytes: read:", tbytesRead, "needed:", missingBytes)
+		}
+		// try again?
+
 		return nil
 	}
 
@@ -63,6 +76,7 @@ func (si *SimpleIteratorImpl) Next() interface{} {
 	}
 
 	// check if there is more data:
+	//fmt.Println("unread bytes:", si.reader.Buffered())
 	_, err = si.reader.Peek(4)
 	if err == io.EOF {
 		fmt.Println("reached end of data.")
