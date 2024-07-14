@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"reflect"
@@ -24,21 +23,25 @@ func (si *SimpleIteratorImpl) HasNext() bool {
 	return si.hasNext
 }
 
+// func (si *SimpleIteratorImpl) readBytes(numBytes int32) []byte {
+
+// }
+
 func (si *SimpleIteratorImpl) Next() interface{} {
 
-	// use si.returnType to create a new item
+	// use si.returnType to create a new instance of the same type
 	newItem := reflect.New(si.returnType)
 	loggable := newItem.Interface().(BinaryLoggable)
 
+	//
 	rval, _, err := si.reader.ReadRune()
 	if err != nil {
 		// check if EOF:
 		if errors.Is(err, io.EOF) {
-			fmt.Println("reached end of data.")
 			si.hasNext = false
 			return nil
 		} else {
-			log.Fatalf("failed to read rune: %v\n", err)
+			log.Fatalln("failed to read rune:", err)
 		}
 	}
 	bytesToRead := int(rval)
@@ -46,13 +49,14 @@ func (si *SimpleIteratorImpl) Next() interface{} {
 	buf := make([]byte, bytesToRead)
 	nBytes, err := si.reader.Read(buf)
 	if err != nil {
-		// TODO: do something drastic...
+		log.Fatalln("failed to read from reader:", err)
 		si.hasNext = false
 		return nil
 	}
 
 	// its possible that the current block doesnt have all the data:
-	// if this happens, attempt to read the missing bytes (should use the next block)
+	// if this happens, attempt to read the missing bytes, which should trigger bufio to read
+	// the next block from file
 	if nBytes != bytesToRead {
 		missingBytes := bytesToRead - nBytes
 		//fmt.Println("didnt read enough bytes - missing:", missingBytes)
@@ -71,15 +75,14 @@ func (si *SimpleIteratorImpl) Next() interface{} {
 
 	err = loggable.fromBytes(buf)
 	if err != nil {
-		fmt.Printf("error while deserializing binary data: %v\n", err)
+		log.Fatalf("error while deserializing binary data: %v\n", err)
 		return nil
 	}
 
 	// check if there is more data:
-	//fmt.Println("unread bytes:", si.reader.Buffered())
 	_, err = si.reader.Peek(4)
 	if err == io.EOF {
-		fmt.Println("reached end of data.")
+		log.Println("reached end of data.")
 		si.hasNext = false
 	}
 

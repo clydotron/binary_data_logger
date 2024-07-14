@@ -26,6 +26,7 @@ type App struct {
 
 func (app *App) readFromFile(ctx context.Context, fileName string) {
 	log.Println("ReadFromFile")
+	// TODO add recover here to handle any panics in the Read machinery
 
 	defer app.waitGroup.Done()
 
@@ -120,9 +121,9 @@ func main() {
 	signalCh := make(chan os.Signal, 4)
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
 
-	// generate logs for t seconds, then cancel them and wait for the funcs to exit
-	runLength := 1
-	// increment the wait group here so we dont have a race condition below
+	// generate logs for t seconds, then wait for the go routines to exit before we start reading
+	runLength := 5
+	// increment the wait group here so we dont have a race condition with the go rountines starting up
 	app.waitGroup.Add(3)
 	go app.logData(ctx, "process1", 10, runLength)
 	go app.logData(ctx, "process2", 25, runLength)
@@ -134,9 +135,10 @@ func main() {
 	app.waitGroup.Add(1)
 	go app.readFromFile(ctx, logFileName)
 
-	// wait for either control-c, or reading to finish to exit
+	// wait for either control-c, or all the log messages to be read
 	select {
 	case <-signalCh:
+		log.Println("ctrl-c detected")
 	case <-app.doneCh:
 	}
 

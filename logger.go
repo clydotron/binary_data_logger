@@ -31,7 +31,9 @@ func NewBinaryLogger(ctx context.Context, fileName string) BinaryLogger {
 		writeCh:        make(chan BinaryLoggable, writeChanBufferSize),
 		writeThreshold: defaultWriteThreshold,
 	}
+
 	go logger.writeToFile(ctx, fileName)
+
 	return &logger
 }
 
@@ -45,6 +47,8 @@ func (logger *BinaryLoggerImpl) writeToFile(ctx context.Context, fileName string
 	}()
 	defer close(logger.writeCh)
 
+	// TODO figure way to switch files on the fly:
+	// fill one file up, move to next
 	f, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatalf("Unable to open the logger file")
