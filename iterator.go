@@ -17,6 +17,8 @@ type SimpleIteratorImpl struct {
 	reader     *bufio.Reader
 	returnType reflect.Type
 	hasNext    bool
+	counter    int
+	bytesRead  int
 }
 
 func (si *SimpleIteratorImpl) HasNext() bool {
@@ -30,7 +32,7 @@ func (si *SimpleIteratorImpl) Next() interface{} {
 	loggable := newItem.Interface().(BinaryLoggable)
 
 	// Get the size of the log entry
-	rval, _, err := si.reader.ReadRune()
+	rval, nBytes, err := si.reader.ReadRune()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			si.hasNext = false
@@ -40,32 +42,35 @@ func (si *SimpleIteratorImpl) Next() interface{} {
 		}
 	}
 	bytesToRead := int(rval)
+	si.bytesRead += nBytes
 
 	buf := make([]byte, bytesToRead)
-	nBytes, err := si.reader.Read(buf)
+	nBytesRead, err := si.reader.Read(buf)
 	if err != nil {
 		si.hasNext = false
-		log.Fatalln("failed to read from reader:", err)
+		log.Fatalln(si.counter, "failed to read from reader:", err)
 		return nil
 	}
+	si.bytesRead += nBytesRead
 
 	// In the event that the current block doesnt have all the data,
 	// repeat the read, which should trigger the reader to load the next block from disk
 	// retry n times
 	// TODO add retry logic
-	if nBytes != bytesToRead {
-		missingBytes := bytesToRead - nBytes
-		//fmt.Println("didnt read enough bytes - missing:", missingBytes)
-		tbytesRead, err := si.reader.Read(buf[nBytes:])
+	if nBytesRead != bytesToRead {
+		missingBytes := bytesToRead - nBytesRead
+		//fmt.Println("didnt read enough bytes - missing:", missingBytes, "buffered:", si.reader.Buffered())
+		tbytesRead, err := si.reader.Read(buf[nBytesRead:])
 		if err != nil {
-			log.Fatalln("failed to read from reader:", err)
+			log.Fatalln(si.counter, "Y - failed to read from reader:", err)
 		}
+
 		if tbytesRead != missingBytes {
 			log.Println("still missing bytes: read:", tbytesRead, "needed:", missingBytes)
+			return nil
 		}
-		// try again?
 
-		return nil
+		si.bytesRead += tbytesRead
 	}
 
 	err = loggable.fromBytes(buf)
@@ -81,5 +86,6 @@ func (si *SimpleIteratorImpl) Next() interface{} {
 		si.hasNext = false
 	}
 
+	si.counter += 1
 	return loggable
 }

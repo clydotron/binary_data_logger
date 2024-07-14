@@ -13,7 +13,10 @@ import (
 )
 
 const (
-	logFileName = "test.log"
+	logFileName                = "test.log"
+	numLogWriters              = 2
+	logWriterDurationInSeconds = 2
+	maxLogFileSize             = 100000
 )
 
 type App struct {
@@ -25,8 +28,11 @@ type App struct {
 // readFromFile - uses the BinaryLogger Read interface to retrieve an interator to the logs
 
 func (app *App) readFromFile(ctx context.Context, fileName string) {
-	log.Println("ReadFromFile")
-	// TODO add recover here to handle any panics in the Read machinery
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("readFromFile -- recovered: error:", r)
+		}
+	}()
 
 	defer app.waitGroup.Done()
 
@@ -46,7 +52,7 @@ func (app *App) readFromFile(ctx context.Context, fileName string) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("Done!")
+			log.Println("reading from file terminated")
 			return
 
 		default:
@@ -65,23 +71,24 @@ func (app *App) readFromFile(ctx context.Context, fileName string) {
 }
 
 // logData - simple function to generate log entries at a specified frequency
-func (app *App) logData(ctx context.Context, prefix string, frequencyInMS, runLengthInSec int) {
-	defer app.waitGroup.Done()
+func (app *App) logData(ctx context.Context, wg *sync.WaitGroup, deviceId int, prefix string, frequencyInMS, runLengthInSec int) {
+	defer wg.Done()
 
 	ticker := time.NewTicker(time.Duration(frequencyInMS) * time.Millisecond)
 	defer ticker.Stop()
 
 	timer := time.NewTimer(time.Duration(runLengthInSec) * time.Second)
 	defer timer.Stop()
+
 	counter := 1
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println(prefix, "terminated")
+			log.Printf("%s -- terminated -- generated %d logs\n", prefix, counter)
 			return
 		case <-timer.C:
-			log.Println(prefix, "timed out")
+			log.Printf("%s -- finished -- generated %d logs\n", prefix, counter)
 			return
 
 		case <-ticker.C:
@@ -89,7 +96,7 @@ func (app *App) logData(ctx context.Context, prefix string, frequencyInMS, runLe
 			rand.Read(data)
 			loggable := &loggableImpl{
 				Name:     prefix,
-				DeviceId: int32(counter),
+				DeviceId: int32(deviceId),
 				ReportId: int32(counter * 2),
 				Value:    float32(counter * 1.0),
 				Data:     data,
@@ -111,9 +118,10 @@ func main() {
 
 	ctx, cancelFcn := context.WithCancel(context.Background())
 
+	wg := &sync.WaitGroup{}
 	app := App{
-		waitGroup: &sync.WaitGroup{},
-		logger:    NewBinaryLogger(ctx, logFileName),
+		waitGroup: wg,
+		logger:    NewBinaryLogger(ctx, wg, logFileName, maxLogFileSize),
 		doneCh:    make(chan bool),
 	}
 
@@ -122,14 +130,15 @@ func main() {
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
 
 	// generate logs for t seconds, then wait for the go routines to exit before we start reading
-	runLength := 5
-	// increment the wait group here so we dont have a race condition with the go rountines starting up
-	app.waitGroup.Add(3)
-	go app.logData(ctx, "process1", 10, runLength)
-	go app.logData(ctx, "process2", 25, runLength)
-	go app.logData(ctx, "process3", 15, runLength)
 
-	app.waitGroup.Wait()
+	// increment the wait group here so we dont have a race condition with the go rountines starting up
+	writerWaitGroup := &sync.WaitGroup{}
+	writerWaitGroup.Add(numLogWriters)
+	for i := 1; i <= numLogWriters; i++ {
+		go app.logData(ctx, writerWaitGroup, i, fmt.Sprintf("process%d", i), 10*i, logWriterDurationInSeconds)
+	}
+
+	writerWaitGroup.Wait()
 
 	// read all of the log files from logger
 	app.waitGroup.Add(1)
