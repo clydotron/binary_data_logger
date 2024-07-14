@@ -39,10 +39,7 @@ type SimpleIteratorImpl struct {
 }
 
 func (si *SimpleIteratorImpl) HasNext() bool {
-	// check to see if there is anything in the file:
-	bytes, err := si.reader.Peek(4)
-	fmt.Printf("checking... %x\n", bytes)
-	return err == nil
+	return si.hasNext
 }
 
 func (si *SimpleIteratorImpl) Next() interface{} {
@@ -51,8 +48,7 @@ func (si *SimpleIteratorImpl) Next() interface{} {
 	newItem := reflect.New(si.returnType)
 	loggable := newItem.Interface().(BinaryLoggable)
 
-	//fmt.Println(si.reader)
-	rval, _, err := si.reader.ReadRune()
+	rval, size, err := si.reader.ReadRune()
 	if err != nil {
 		// check if EOF:
 		if errors.Is(err, io.EOF) {
@@ -63,7 +59,7 @@ func (si *SimpleIteratorImpl) Next() interface{} {
 			log.Fatalf("failed to read rune: %v\n", err)
 		}
 	}
-	//fmt.Printf("size %d >> rune:%v\n", size, rval)
+	fmt.Printf("size %d >> rune:%v\n", size, rval)
 	bytesToRead := int(rval)
 
 	buf := make([]byte, bytesToRead)

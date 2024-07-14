@@ -4,14 +4,15 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"os"
 	"reflect"
+	"time"
 )
 
 const (
-	writeChanBufferSize = 20
+	writeChanBufferSize   = 20
+	defaultWriteThreshold = time.Duration(time.Second)
 )
 
 type SimpleLogger interface {
@@ -35,8 +36,9 @@ type BinaryLoggerImpl[T any] struct {
 }
 
 type SimpleLoggerImpl struct {
-	fileName string
-	writeCh  chan BinaryLoggable
+	fileName       string
+	writeCh        chan BinaryLoggable
+	writeThreshold time.Duration
 }
 
 // func NewBinaryLogger[T any](fileName string) BinaryLogger[T] {
@@ -47,16 +49,15 @@ type SimpleLoggerImpl struct {
 
 func NewSimpleLogger(ctx context.Context, fileName string) SimpleLogger {
 	logger := SimpleLoggerImpl{
-		fileName: fileName,
-		writeCh:  make(chan BinaryLoggable, writeChanBufferSize),
+		fileName:       fileName,
+		writeCh:        make(chan BinaryLoggable, writeChanBufferSize),
+		writeThreshold: defaultWriteThreshold,
 	}
 	go logger.writeToFile(ctx)
 	return &logger
 }
 
 func (logger *SimpleLoggerImpl) writeToFile(ctx context.Context) {
-	fmt.Println("writeToFile!")
-	defer fmt.Println("WTF done")
 
 	f, err := os.OpenFile(logger.fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -67,33 +68,43 @@ func (logger *SimpleLoggerImpl) writeToFile(ctx context.Context) {
 	writer := bufio.NewWriter(f)
 	defer writer.Flush()
 
+	ticker := time.NewTicker(time.Second)
+	lastFlushTS := time.Now()
+
 	//lastUpdate := time.Now()
 	// set a timer to automatically flush the buffer if its been longer than x millis
 	for {
 		//fmt.Println("inside")
 		select {
 		case <-ctx.Done():
-			fmt.Println("writeFcn - ctx is done")
 			return
 
+		case <-ticker.C:
+			// if we have buffered data, check how long it has been since we wrote it
+			// if more than the specified threshold, flush it!
+			if writer.Buffered() > 0 {
+				tdelta := time.Since(lastFlushTS)
+				if tdelta > logger.writeThreshold {
+					writer.Flush()
+					lastFlushTS = time.Now()
+				}
+			}
+
 		case loggable := <-logger.writeCh:
-			fmt.Println("consuming")
 			bytes, err := loggable.toBytes()
 			if err != nil {
 				log.Fatalf("failed to serialize log info: %v\n", err)
 			}
-
-			writer.WriteRune(rune(len(bytes))) // write the size of the data
+			writer.WriteRune(rune(len(bytes)))
 			writer.Write(bytes)
 		}
 	}
 }
 
 func (logger *SimpleLoggerImpl) Write(loggable BinaryLoggable) error {
-	// check if the channel is full?
-	// otherwise we block...
-	fmt.Println("logging!")
 
+	// provide a default for the case where the channel is full,
+	// otherwise this could block
 	select {
 	case logger.writeCh <- loggable:
 	default:
@@ -101,27 +112,6 @@ func (logger *SimpleLoggerImpl) Write(loggable BinaryLoggable) error {
 	}
 
 	return nil
-	// f, err := os.OpenFile(logger.fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	// if err != nil {
-	// 	//log.Fatal(err)
-	// 	// TODO revisit - Panic/Recover?
-	// 	return err
-	// }
-	// defer f.Close()
-
-	// bytes, err := loggable.toBytes()
-	// if err != nil {
-	// 	return err
-	// }
-
-	// fmt.Printf("writing to file: %v %x\n", rune(len(bytes)), bytes)
-
-	// // this might be overkill for what we want/need
-	// writer := bufio.NewWriter(f)
-	// writer.WriteRune(rune(len(bytes))) // write the size of the data
-	// writer.Write(bytes)
-	// writer.Flush()
-	// return nil
 }
 
 func (logger *SimpleLoggerImpl) Read(file *os.File, clazz any) (SimpleIterator, error) {
@@ -130,16 +120,13 @@ func (logger *SimpleLoggerImpl) Read(file *os.File, clazz any) (SimpleIterator, 
 	reader := bufio.NewReader(file)
 
 	// check to see if there is anything in the file:
-	// _, err := reader.Peek(4)
-	// if err == io.EOF {
-	// 	return &SimpleIteratorImpl{hasNext: false}, nil
-	// }
-	//fmt.Printf("read %d bytes\n", nBytes)
+	_, err := reader.Peek(4)
+	hasNext := err == nil
 
 	iter := &SimpleIteratorImpl{
 		reader:     reader,
 		returnType: reflect.TypeOf(LoggableImpl1{}),
-		hasNext:    true}
+		hasNext:    hasNext}
 
 	return iter, nil
 }

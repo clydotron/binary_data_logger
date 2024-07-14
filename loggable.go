@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 )
 
 type BinaryLoggable interface {
@@ -15,13 +16,15 @@ type BinaryLoggable interface {
 }
 
 type LoggableImpl1 struct {
-	Val1 int32
-	Val2 int32
-	Val3 float32
-	// make endian-ness a parameter?
+	DeviceId int32
+	ReportId int32
+	Value    float32
 }
 
 // TODO Add a second one with variable sized data
+func (l *LoggableImpl1) String() string {
+	return fmt.Sprintf("DeviceId: %d ReportId: %d Val3: %f", l.DeviceId, l.ReportId, l.Value)
+}
 
 func (l *LoggableImpl1) toBytes() ([]byte, error) {
 	buf := new(bytes.Buffer)

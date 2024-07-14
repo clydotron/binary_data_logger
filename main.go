@@ -11,12 +11,18 @@ import (
 	"time"
 )
 
+const (
+	logFileName = "test.log"
+)
+
 type App struct {
 	//logger BinaryLogger[LoggableImpl1]
 	logger    SimpleLogger
 	doneCh    chan bool
 	waitGroup *sync.WaitGroup
 }
+
+// readFromFile - uses the BinaryLogger Read interface to retrieve an interator to the logs
 
 func (app *App) readFromFile(ctx context.Context, fileName string) {
 	app.waitGroup.Add(1)
@@ -38,6 +44,7 @@ func (app *App) readFromFile(ctx context.Context, fileName string) {
 
 	// sit in this loop until the app is exited.
 	// check for new messages every second.
+	// TODO revise this - tail wont work
 	for {
 		select {
 		case <-ctx.Done():
@@ -47,12 +54,16 @@ func (app *App) readFromFile(ctx context.Context, fileName string) {
 		case <-ticker.C:
 			for iterator.HasNext() {
 				loggedData := iterator.Next()
-				fmt.Println(loggedData)
+				log, ok := loggedData.(*LoggableImpl1)
+				if ok {
+					fmt.Println(log.String())
+				}
 			}
 		}
 	}
 }
 
+// logData - simple function to generate log entries at a specified frequency
 func (app *App) logData(ctx context.Context, prefix string, frequencyInMS int32) {
 
 	app.waitGroup.Add(1)
@@ -71,9 +82,9 @@ func (app *App) logData(ctx context.Context, prefix string, frequencyInMS int32)
 
 		case <-ticker.C:
 			loggable := LoggableImpl1{
-				Val1: int32(counter),
-				Val2: int32(counter * 2),
-				Val3: float32(counter * 1.0),
+				DeviceId: int32(counter),
+				ReportId: int32(counter * 2),
+				Value:    float32(counter * 1.0),
 			}
 			err := app.logger.Write(&loggable)
 			if err != nil {
@@ -91,7 +102,7 @@ func main() {
 
 	app := App{
 		waitGroup: &sync.WaitGroup{},
-		logger:    NewSimpleLogger(ctx, "testx.log"),
+		logger:    NewSimpleLogger(ctx, logFileName),
 		doneCh:    make(chan bool),
 	}
 
@@ -99,14 +110,13 @@ func main() {
 	signalCh := make(chan os.Signal, 4)
 	signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM)
 
-	go app.readFromFile(ctx, "testx.log")
-	go app.logData(ctx, "process1", 1000)
-	go app.logData(ctx, "process2", 2500)
+	go app.readFromFile(ctx, logFileName)
+	//go app.logData(ctx, "process1", 100)
+	//go app.logData(ctx, "process2", 250)
 
-	// wait for control-c
+	// wait for control-c to exit
 
 	<-signalCh
-	fmt.Println("ctrl-c!")
 	cancelFcn()
 
 	fmt.Println("waiting for everything to shutdown")
