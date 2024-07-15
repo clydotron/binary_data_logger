@@ -13,18 +13,19 @@ Design details:
 - Uses buffered channel to queue objects to log
 - Has internal go routine to:
 	- consume loggable object from the channel
-	- serialize them, write to storage
-	- Uses bufio.Reader and bufio.Writer for buffered read/write operations
+	- serialize them
+	- write to storage
+- Uses bufio.Reader and bufio.Writer for buffered read/write operations
 
 #### Interface
 ```
 type BinaryLogger interface 
 
-  // Write loggable objects to file
+	// Write loggable objects to file
 	Write(loggable BinaryLoggable) error
 
-  // Read log entries from the specified file via an interator
-  // @param clazz instance of the struct to be used for deserializing the data from file.
+	// Read log entries from the specified file via an interator
+	// @param clazz instance of the struct to be used for deserializing the data from file.
 	Read(file *os.File, clazz any) (SimpleIterator, error)
 }
 ```
@@ -43,6 +44,11 @@ type BinaryLoggable interface {
 }
 ```
 
+``` 
+type BinaryLoggableFactory {
+	New() BinaryLoggable
+}
+```
 ### Iterator
 Simple iterator interface that returns a generic `interface{}` for each element being iterated over
 
