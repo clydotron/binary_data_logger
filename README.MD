@@ -9,10 +9,12 @@ Written in Go.
 
 Responsible for reading and writing the binary data to file.
 Design details:
-Thread safe
-Uses buffered channel to queue objects to log
-Has internal go routine to consume loggable object from the channel, serialize them, write to storage
-Uses bufio.Reader and bufio.Writer for buffered read/write operations
+- Thread safe
+- Uses buffered channel to queue objects to log
+- Has internal go routine to:
+	- consume loggable object from the channel
+	- serialize them, write to storage
+	- Uses bufio.Reader and bufio.Writer for buffered read/write operations
 
 #### Interface
 ```
