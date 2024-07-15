@@ -1,5 +1,5 @@
 # Binary Data Logger
-Coding homework assignment that implements a thread safe binary data logging service.
+Small coding project that implements a thread-safe binary data logging service.
 Written in Go.
 
 
@@ -29,10 +29,11 @@ type BinaryLogger interface
 	Read(file *os.File, clazz any) (SimpleIterator, error)
 }
 ```
-TODO: replace clazz with LoggableFactory interface.
-
 
 ### Loggable
+
+An object that can be logged by an object implementing the 'BinaryLogger' iterface. 
+Must be able to read/write data to 
 ```
 type BinaryLoggable interface {
 
@@ -49,8 +50,9 @@ type BinaryLoggableFactory {
 	New() BinaryLoggable
 }
 ```
+
 ### Iterator
-Simple iterator interface that returns a generic `interface{}` for each element being iterated over
+Simple iterator interface that returns a generic `interface{}` for each element being iterated over.
 
 #### Interface
 ```
@@ -61,6 +63,26 @@ type SimpleIterator interface {
 ```
 
 ## Usage
+The code demonstrates writing to the logger from multiple concurrent go routines, then retrieving all of the logged data.
+You can configure the code by editing these values in the top of the 'main.go' file:
 
+	logFileName                = "test.log"
+	numLogWriters              = 2
+	logWriterDurationInSeconds = 2
+	maxLogFileSize             = 100000
+
+| parameter | value | description |
+| --- | --- | --- |
+| logFileName | string | name of the file to write/read log messages |
+| numLogWriters | int | number of concurrent go routines to run to generate log messages |
+| logWriterDurationInSeconds | int | how long (in seconds) to run each log writer |
+| maxLogFileSize | int | not currently enforced. Coming soon! |
+
+To run the code: 
+'go run .'
+
+### Command line arguments:
+Coming Soon
+TODO: replace clazz with LoggableFactory interface.
 
 
