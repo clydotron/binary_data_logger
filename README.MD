@@ -33,7 +33,8 @@ type BinaryLogger interface
 ### Loggable
 
 An object that can be logged by an object implementing the 'BinaryLogger' iterface. 
-Must be able to read/write data to 
+Must be able to read/write data to binary format. Each loggable can specify the byte order to use, default is little endian.
+
 ```
 type BinaryLoggable interface {
 
@@ -66,10 +67,6 @@ type SimpleIterator interface {
 The code demonstrates writing to the logger from multiple concurrent go routines, then retrieving all of the logged data.
 You can configure the code by editing these values in the top of the 'main.go' file:
 
-	logFileName                = "test.log"
-	numLogWriters              = 2
-	logWriterDurationInSeconds = 2
-	maxLogFileSize             = 100000
 
 | parameter | value | description |
 | --- | --- | --- |
